@@ -1,0 +1,507 @@
+#include <string.h>
+#include <stdint.h>
+#include <math.h>
+
+#include "bm13xx.h"
+#include "esp_log.h"
+#include "serial.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+
+
+const char* TAG="BM1366";
+
+static const uint8_t chip_id[6] = {0xaa, 0x55, 0x13, 0x66, 0x00, 0x00};
+
+BM1366::BM1366() : BM13xx() {
+}
+
+uint8_t BM1366::get_job_id_from_result(uint8_t job_id) {
+    return job_id & 0xf8;
+}
+
+uint8_t BM1366::next_job_id() {
+    this->id = (this->id + 8) % 128;
+    return 0;
+
+}
+
+void BM1366::send_hash_frequency(float target_freq)
+{
+    // default 200Mhz if it fails
+    uint8_t freqbuf[9] = {0x00, 0x08, 0x40, 0xA0, 0x02, 0x41}; // freqbuf - pll0_parameter
+    float newf = 200.0;
+
+    uint8_t fb_divider = 0;
+    uint8_t post_divider1 = 0, post_divider2 = 0;
+    uint8_t ref_divider = 0;
+    float min_difference = 10;
+
+    // refdiver is 2 or 1
+    // postdivider 2 is 1 to 7
+    // postdivider 1 is 1 to 7 and less than postdivider 2
+    // fbdiv is 144 to 235
+    for (uint8_t refdiv_loop = 2; refdiv_loop > 0 && fb_divider == 0; refdiv_loop--) {
+        for (uint8_t postdiv1_loop = 7; postdiv1_loop > 0 && fb_divider == 0; postdiv1_loop--) {
+            for (uint8_t postdiv2_loop = 1; postdiv2_loop < postdiv1_loop && fb_divider == 0; postdiv2_loop++) {
+                int temp_fb_divider = round(((float) (postdiv1_loop * postdiv2_loop * target_freq * refdiv_loop) / 25.0));
+
+                if (temp_fb_divider >= 144 && temp_fb_divider <= 235) {
+                    float temp_freq = 25.0 * (float) temp_fb_divider / (float) (refdiv_loop * postdiv2_loop * postdiv1_loop);
+                    float freq_diff = fabs(target_freq - temp_freq);
+
+                    if (freq_diff < min_difference) {
+                        fb_divider = temp_fb_divider;
+                        post_divider1 = postdiv1_loop;
+                        post_divider2 = postdiv2_loop;
+                        ref_divider = refdiv_loop;
+                        min_difference = freq_diff;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    if (fb_divider == 0) {
+        puts("Finding dividers failed, using default value (200Mhz)");
+    } else {
+        newf = 25.0 * (float) (fb_divider) / (float) (ref_divider * post_divider1 * post_divider2);
+        printf("final refdiv: %d, fbdiv: %d, postdiv1: %d, postdiv2: %d, min diff value: %f\n", ref_divider, fb_divider,
+               post_divider1, post_divider2, min_difference);
+
+        freqbuf[3] = fb_divider;
+        freqbuf[4] = ref_divider;
+        freqbuf[5] = (((post_divider1 - 1) & 0xf) << 4) + ((post_divider2 - 1) & 0xf);
+
+        if (fb_divider * 25 / (float) ref_divider >= 2400) {
+            freqbuf[2] = 0x50;
+        }
+    }
+
+    this->send((TYPE_CMD | GROUP_ALL | CMD_WRITE), freqbuf, 6, BM13xx_SERIALTX_DEBUG);
+
+    ESP_LOGI(TAG, "Setting Frequency to %.2fMHz (%.2f)", target_freq, newf);
+}
+
+void BM1366::do_frequency_ramp_up()
+{
+    // TODO: figure out how to replicate this ramp up.
+    //       bm1366 doesn't get going until after this sequence
+    uint8_t init724[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xA2, 0x02, 0x55, 0x0F};
+    this->send_simple(init724, 11);
+
+    uint8_t init725[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xAF, 0x02, 0x64, 0x08};
+    this->send_simple(init725, 11);
+
+    uint8_t init726[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xA5, 0x02, 0x54, 0x08};
+    this->send_simple(init726, 11);
+
+    uint8_t init727[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xA8, 0x02, 0x63, 0x11};
+    this->send_simple(init727, 11);
+
+    uint8_t init728[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xB6, 0x02, 0x63, 0x0C};
+    this->send_simple(init728, 11);
+
+    uint8_t init729[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xA8, 0x02, 0x53, 0x1A};
+    this->send_simple(init729, 11);
+
+    uint8_t init730[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xB4, 0x02, 0x53, 0x12};
+    this->send_simple(init730, 11);
+
+    uint8_t init731[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xA8, 0x02, 0x62, 0x14};
+    this->send_simple(init731, 11);
+
+    uint8_t init732[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xAA, 0x02, 0x43, 0x15};
+    this->send_simple(init732, 11);
+
+    uint8_t init733[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xA2, 0x02, 0x52, 0x14};
+    this->send_simple(init733, 11);
+
+    uint8_t init734[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xAB, 0x02, 0x52, 0x12};
+    this->send_simple(init734, 11);
+
+    uint8_t init735[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xB4, 0x02, 0x52, 0x17};
+    this->send_simple(init735, 11);
+
+    uint8_t init736[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xBD, 0x02, 0x52, 0x11};
+    this->send_simple(init736, 11);
+
+    uint8_t init737[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xA5, 0x02, 0x42, 0x0C};
+    this->send_simple(init737, 11);
+
+    uint8_t init738[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xA1, 0x02, 0x61, 0x1D};
+    this->send_simple(init738, 11);
+
+    uint8_t init739[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xA8, 0x02, 0x61, 0x1B};
+    this->send_simple(init739, 11);
+
+    uint8_t init740[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xAF, 0x02, 0x61, 0x19};
+    this->send_simple(init740, 11);
+
+    uint8_t init741[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xB6, 0x02, 0x61, 0x06};
+    this->send_simple(init741, 11);
+
+    uint8_t init742[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xA2, 0x02, 0x51, 0x1B};
+    this->send_simple(init742, 11);
+
+    uint8_t init743[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xA8, 0x02, 0x51, 0x10};
+    this->send_simple(init743, 11);
+
+    uint8_t init744[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xAE, 0x02, 0x51, 0x0A};
+    this->send_simple(init744, 11);
+
+    uint8_t init745[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xB4, 0x02, 0x51, 0x18};
+    this->send_simple(init745, 11);
+
+    uint8_t init746[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xBA, 0x02, 0x51, 0x1C};
+    this->send_simple(init746, 11);
+
+    uint8_t init747[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xA0, 0x02, 0x41, 0x14};
+    this->send_simple(init747, 11);
+
+    uint8_t init748[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xA5, 0x02, 0x41, 0x03};
+    this->send_simple(init748, 11);
+
+    uint8_t init749[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xAA, 0x02, 0x41, 0x1F};
+    this->send_simple(init749, 11);
+
+    uint8_t init750[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xAF, 0x02, 0x41, 0x08};
+    this->send_simple(init750, 11);
+
+    uint8_t init751[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xB4, 0x02, 0x41, 0x02};
+    this->send_simple(init751, 11);
+
+    uint8_t init752[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xB9, 0x02, 0x41, 0x0B};
+    this->send_simple(init752, 11);
+
+    uint8_t init753[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xBE, 0x02, 0x41, 0x09};
+    this->send_simple(init753, 11);
+
+    uint8_t init754[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x50, 0xC3, 0x02, 0x41, 0x01};
+    this->send_simple(init754, 11);
+
+    uint8_t init755[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xA0, 0x02, 0x31, 0x18};
+    this->send_simple(init755, 11);
+
+    uint8_t init756[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xA4, 0x02, 0x31, 0x17};
+    this->send_simple(init756, 11);
+
+    uint8_t init757[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xA8, 0x02, 0x31, 0x06};
+    this->send_simple(init757, 11);
+
+    uint8_t init758[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xAC, 0x02, 0x31, 0x09};
+    this->send_simple(init758, 11);
+
+    uint8_t init759[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xB0, 0x02, 0x31, 0x01};
+    this->send_simple(init759, 11);
+
+    uint8_t init760[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xB4, 0x02, 0x31, 0x0E};
+    this->send_simple(init760, 11);
+
+    uint8_t init761[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xA1, 0x02, 0x60, 0x18};
+    this->send_simple(init761, 11);
+
+    uint8_t init762[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xBC, 0x02, 0x31, 0x10};
+    this->send_simple(init762, 11);
+
+    uint8_t init763[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xA8, 0x02, 0x60, 0x1E};
+    this->send_simple(init763, 11);
+
+    uint8_t init764[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x50, 0xC4, 0x02, 0x31, 0x0F};
+    this->send_simple(init764, 11);
+
+    uint8_t init765[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xAF, 0x02, 0x60, 0x1C};
+    this->send_simple(init765, 11);
+
+    uint8_t init766[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x50, 0xCC, 0x02, 0x31, 0x11};
+    this->send_simple(init766, 11);
+
+    uint8_t init767[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xB6, 0x02, 0x60, 0x03};
+    this->send_simple(init767, 11);
+
+    uint8_t init768[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x50, 0xD4, 0x02, 0x31, 0x16};
+    this->send_simple(init768, 11);
+
+    uint8_t init769[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xA2, 0x02, 0x50, 0x1E};
+    this->send_simple(init769, 11);
+
+    uint8_t init770[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xA5, 0x02, 0x50, 0x1C};
+    this->send_simple(init770, 11);
+
+    uint8_t init771[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xA8, 0x02, 0x50, 0x15};
+    this->send_simple(init771, 11);
+
+    uint8_t init772[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xAB, 0x02, 0x50, 0x18};
+    this->send_simple(init772, 11);
+
+    uint8_t init773[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xAE, 0x02, 0x50, 0x0F};
+    this->send_simple(init773, 11);
+
+    uint8_t init774[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xB1, 0x02, 0x50, 0x0A};
+    this->send_simple(init774, 11);
+
+    uint8_t init775[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xB4, 0x02, 0x50, 0x1D};
+    this->send_simple(init775, 11);
+
+    uint8_t init776[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xB7, 0x02, 0x50, 0x10};
+    this->send_simple(init776, 11);
+
+    uint8_t init777[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xBA, 0x02, 0x50, 0x19};
+    this->send_simple(init777, 11);
+
+    uint8_t init778[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xBD, 0x02, 0x50, 0x1B};
+    this->send_simple(init778, 11);
+
+    uint8_t init779[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xA0, 0x02, 0x40, 0x11};
+    this->send_simple(init779, 11);
+
+    uint8_t init780[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x50, 0xC3, 0x02, 0x50, 0x1E};
+    this->send_simple(init780, 11);
+
+    uint8_t init781[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xA5, 0x02, 0x40, 0x06};
+    this->send_simple(init781, 11);
+
+    uint8_t init782[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x50, 0xC9, 0x02, 0x50, 0x15};
+    this->send_simple(init782, 11);
+
+    uint8_t init783[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xAA, 0x02, 0x40, 0x1A};
+    this->send_simple(init783, 11);
+
+    uint8_t init784[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x50, 0xCF, 0x02, 0x50, 0x0F};
+    this->send_simple(init784, 11);
+
+    uint8_t init785[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xAF, 0x02, 0x40, 0x0D};
+    this->send_simple(init785, 11);
+
+    uint8_t init786[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x50, 0xD5, 0x02, 0x50, 0x1D};
+    this->send_simple(init786, 11);
+
+    uint8_t init787[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xB4, 0x02, 0x40, 0x07};
+    this->send_simple(init787, 11);
+
+    uint8_t init788[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x50, 0xDB, 0x02, 0x50, 0x19};
+    this->send_simple(init788, 11);
+
+    uint8_t init789[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xB9, 0x02, 0x40, 0x0E};
+    this->send_simple(init789, 11);
+
+    uint8_t init790[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x50, 0xE1, 0x02, 0x50, 0x1C};
+    this->send_simple(init790, 11);
+
+    uint8_t init791[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x40, 0xBE, 0x02, 0x40, 0x0C};
+    this->send_simple(init791, 11);
+
+    uint8_t init792[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x50, 0xE7, 0x02, 0x50, 0x06};
+    this->send_simple(init792, 11);
+
+    uint8_t init793[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x08, 0x50, 0xC2, 0x02, 0x40, 0x1C};
+    this->send_simple(init793, 11);
+}
+
+uint8_t BM1366::send_init(uint64_t frequency, uint16_t asic_count)
+{
+
+    uint8_t init0[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0xA4, 0x90, 0x00, 0xFF, 0xFF, 0x1C};
+    this->send_simple(init0, 11);
+
+    uint8_t init1[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0xA4, 0x90, 0x00, 0xFF, 0xFF, 0x1C};
+    this->send_simple(init1, 11);
+
+    uint8_t init2[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0xA4, 0x90, 0x00, 0xFF, 0xFF, 0x1C};
+    this->send_simple(init2, 11);
+
+    // read register 00 on all chips
+    uint8_t init3[7] = {0x55, 0xAA, 0x52, 0x05, 0x00, 0x00, 0x0A};
+    this->send_simple(init3, 7);
+
+    int chip_counter = 0;
+    while (true) {
+        if(SERIAL_rx(asic_response_buffer, 11, 1000) > 0) {
+            chip_counter++;
+        } else {
+            break;
+        }
+    }
+    ESP_LOGI(TAG, "%i chip(s) detected on the chain, expected %i", chip_counter, asic_count);
+
+    uint8_t init4[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0xA8, 0x00, 0x07, 0x00, 0x00, 0x03};
+    this->send_simple(init4, 11);
+
+    uint8_t init5[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x18, 0xFF, 0x0F, 0xC1, 0x00, 0x00};
+    this->send_simple(init5, 11);
+
+    this->send_chain_inactive();
+    // uint8_t init6[7] = {0x55, 0xAA, 0x53, 0x05, 0x00, 0x00, 0x03};
+    // this->send_simple(init6, 7);
+
+    uint8_t address_interval = 2;
+    for (uint8_t i = 0; i < chip_counter; i++) {
+        this->set_chip_address((uint8_t) (i * address_interval));
+        // uint8_t init7[7] = { 0x55, 0xAA, 0x40, 0x05, 0x00, 0x00, 0x1C };
+        // this->send_simple(init7, 7);
+    }
+
+    uint8_t init135[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x3C, 0x80, 0x00, 0x85, 0x40, 0x0C};
+    this->send_simple(init135, 11);
+
+    uint8_t init136[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x3C, 0x80, 0x00, 0x80, 0x20, 0x19};
+    this->send_simple(init136, 11);
+
+    // uint8_t init137[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x14, 0x00, 0x00, 0x00, 0xFF, 0x08};
+    // this->send_simple(init137, 11);
+    this->set_job_difficulty_mask(BM136x_INITIAL_DIFFICULTY);
+
+    uint8_t init138[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x54, 0x00, 0x00, 0x00, 0x03, 0x1D};
+    this->send_simple(init138, 11);
+
+    uint8_t init139[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x58, 0x02, 0x11, 0x11, 0x11, 0x06};
+    this->send_simple(init139, 11);
+
+    uint8_t init171[11] = {0x55, 0xAA, 0x41, 0x09, 0x00, 0x2C, 0x00, 0x7C, 0x00, 0x03, 0x03};
+    this->send_simple(init171, 11);
+
+    uint8_t init173[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x28, 0x11, 0x30, 0x02, 0x00, 0x03};
+    this->send_simple(init173, 11);
+
+    for (uint8_t i = 0; i < chip_counter; i++) {
+        uint8_t set_a8_register[6] = {(uint8_t) (i * address_interval), 0xA8, 0x00, 0x07, 0x01, 0xF0};
+        this->send((TYPE_CMD | GROUP_SINGLE | CMD_WRITE), set_a8_register, 6, BM13xx_SERIALTX_DEBUG);
+        uint8_t set_18_register[6] = {(uint8_t) (i * address_interval), 0x18, 0xF0, 0x00, 0xC1, 0x00};
+        this->send((TYPE_CMD | GROUP_SINGLE | CMD_WRITE), set_18_register, 6, BM13xx_SERIALTX_DEBUG);
+        uint8_t set_3c_register_first[6] = {(uint8_t) (i * address_interval), 0x3C, 0x80, 0x00, 0x85, 0x40};
+        this->send((TYPE_CMD | GROUP_SINGLE | CMD_WRITE), set_3c_register_first, 6, BM13xx_SERIALTX_DEBUG);
+        uint8_t set_3c_register_second[6] = {(uint8_t) (i * address_interval), 0x3C, 0x80, 0x00, 0x80, 0x20};
+        this->send((TYPE_CMD | GROUP_SINGLE | CMD_WRITE), set_3c_register_second, 6, BM13xx_SERIALTX_DEBUG);
+        uint8_t set_3c_register_third[6] = {(uint8_t) (i * address_interval), 0x3C, 0x80, 0x00, 0x82, 0xAA};
+        this->send((TYPE_CMD | GROUP_SINGLE | CMD_WRITE), set_3c_register_third, 6, BM13xx_SERIALTX_DEBUG);
+    }
+
+    this->do_frequency_ramp_up();
+
+    this->send_hash_frequency(frequency);
+
+    //register 10 is still a bit of a mystery. discussion: https://github.com/skot/ESP-Miner/pull/167
+
+    // uint8_t set_10_hash_counting[6] = {0x00, 0x10, 0x00, 0x00, 0x11, 0x5A}; //S19k Pro Default
+    // uint8_t set_10_hash_counting[6] = {0x00, 0x10, 0x00, 0x00, 0x14, 0x46}; //S19XP-Luxos Default
+    uint8_t set_10_hash_counting[6] = {0x00, 0x10, 0x00, 0x00, 0x15, 0x1C}; //S19XP-Stock Default
+    // uint8_t set_10_hash_counting[6] = {0x00, 0x10, 0x00, 0x0F, 0x00, 0x00}; //supposedly the "full" 32bit nonce range
+    this->send((TYPE_CMD | GROUP_ALL | CMD_WRITE), set_10_hash_counting, 6, BM13xx_SERIALTX_DEBUG);
+
+    uint8_t init795[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0xA4, 0x90, 0x00, 0xFF, 0xFF, 0x1C};
+    this->send_simple(init795, 11);
+
+    return chip_counter;
+}
+
+uint8_t BM1366::init(uint64_t frequency, uint16_t asic_count)
+{
+    ESP_LOGI(TAG, "Initializing BM1366");
+
+    memset(asic_response_buffer, 0, 1024);
+
+    //esp_rom_gpio_pad_select_gpio(BM1366_RST_PIN);
+    gpio_pad_select_gpio(BM13XX_RST_PIN);
+    gpio_set_direction(BM13XX_RST_PIN, GPIO_MODE_OUTPUT);
+
+    // reset the bm1366
+    this->reset();
+
+    return this->send_init(frequency, asic_count);
+}
+
+int BM1366::set_max_baud(void)
+{
+    return 1000000;
+
+    // // divider of 0 for 3,125,000
+    // ESP_LOGI(TAG, "Setting max baud of 1000000 ");
+
+    // uint8_t init8[11] = {0x55, 0xAA, 0x51, 0x09, 0x00, 0x28, 0x11, 0x30, 0x02, 0x00, 0x03};
+    // _send_simple(init8, 11);
+    // return 1000000;
+}
+
+void BM1366::send_work(void * pvParameters, bm_job * next_bm_job)
+{
+    BM136x_job job;
+    job.job_id = this->next_job_id();
+    job.num_midstates = 0x01;
+    memcpy(&job.starting_nonce, &next_bm_job->starting_nonce, 4);
+    memcpy(&job.nbits, &next_bm_job->target, 4);
+    memcpy(&job.ntime, &next_bm_job->ntime, 4);
+    memcpy(job.merkle_root, next_bm_job->merkle_root_be, 32);
+    memcpy(job.prev_block_hash, next_bm_job->prev_block_hash_be, 32);
+    memcpy(&job.version, &next_bm_job->version, 4);
+
+    if (this->active_jobs[job.job_id] != NULL) {
+        free_bm_job(this->active_jobs[job.job_id]);
+    }
+
+    this->active_jobs[job.job_id] = next_bm_job;
+
+    this->valid_jobs[job.job_id] = 1;
+
+    //debug sent jobs - this can get crazy if the interval is short
+    #if BM1368_DEBUG_JOBS
+    ESP_LOGI(TAG, "Send Job: %02X", job.job_id);
+    #endif
+
+    this->send((TYPE_JOB | GROUP_SINGLE | CMD_WRITE), (uint8_t*) &job, sizeof(BM136x_job), BM13xx_DEBUG_WORK);
+}
+
+bm136x_asic_result * BM1366::receive_work(void)
+{
+    // wait for a response, wait time is pretty arbitrary
+    int received = SERIAL_rx(asic_response_buffer, 11, 60000);
+
+    if (received < 0) {
+        ESP_LOGI(TAG, "Error in serial RX");
+        return NULL;
+    } else if (received == 0) {
+        // Didn't find a solution, restart and try again
+        return NULL;
+    }
+
+    if (received != 11 || asic_response_buffer[0] != 0xAA || asic_response_buffer[1] != 0x55) {
+        ESP_LOGI(TAG, "Serial RX invalid %i", received);
+        ESP_LOG_BUFFER_HEX(TAG, asic_response_buffer, received);
+        SERIAL_clear_buffer();
+        return NULL;
+    }
+
+    return (bm136x_asic_result *) asic_response_buffer;
+}
+
+
+
+task_result * BM1366::process_work(void * pvParameters)
+{
+
+    bm136x_asic_result * asic_result = this->receive_work();
+
+    if (asic_result == NULL) {
+        return NULL;
+    }
+
+    uint8_t job_id = this->get_job_id_from_result(asic_result->job_id);
+    uint8_t core_id = (uint8_t)((reverse_uint32(asic_result->nonce) >> 25) & 0x7f); // BM1366 has 112 cores, so it should be coded on 7 bits
+    uint8_t small_core_id = asic_result->job_id & 0x07; // BM1366 has 8 small cores, so it should be coded on 3 bits
+    uint32_t version_bits = (reverse_uint16(asic_result->version) << 13); // shift the 16 bit value left 13
+    ESP_LOGI(TAG, "Job ID: %02X, Core: %d/%d, Ver: %08" PRIX32, job_id, core_id, small_core_id, version_bits);
+
+    if (this->valid_jobs[job_id] == 0) {
+        ESP_LOGE(TAG, "Invalid job found, 0x%02X", job_id);
+        return NULL;
+    }
+
+    uint32_t rolled_version = this->active_jobs[job_id]->version | version_bits;
+
+    result.job_id = job_id;
+    result.nonce = asic_result->nonce;
+    result.rolled_version = rolled_version;
+
+    return &result;
+}
