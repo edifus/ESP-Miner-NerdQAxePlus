@@ -17,7 +17,7 @@
 #include "stratum_task.h"
 #include "user_input_task.h"
 
-static GlobalState GLOBAL_STATE = {.extranonce_str = NULL, .extranonce_2_len = 0, .abandon_work = 0, .version_mask = 0};
+static GlobalState GLOBAL_STATE = {.extranonce_str = NULL, .extranonce_2_len = 0, .version_mask = 0, .stratum_difficulty = 8192};
 
 static const char * TAG = "bitaxe";
 static const double NONCE_SPACE = 4294967296.0; //  2^32
@@ -170,17 +170,24 @@ void app_main(void)
     if (GLOBAL_STATE.ASIC_functions.init_fn != NULL) {
         wifi_softap_off();
 
-        queue_init(&GLOBAL_STATE.stratum_queue);
-        queue_init(&GLOBAL_STATE.ASIC_jobs_queue);
-
         SERIAL_init();
         (*GLOBAL_STATE.ASIC_functions.init_fn)(GLOBAL_STATE.POWER_MANAGEMENT_MODULE.frequency_value, GLOBAL_STATE.asic_count);
         SERIAL_set_baud((*GLOBAL_STATE.ASIC_functions.set_max_baud_fn)());
         SERIAL_clear_buffer();
 
+        pthread_mutex_init(&GLOBAL_STATE.current_stratum_job_lock, NULL);
+        pthread_mutex_init(&GLOBAL_STATE.valid_jobs_lock, NULL);
+
+        memset(&GLOBAL_STATE.current_stratum_job, 0, sizeof(mining_notify));
+
+        for (int i = 0; i < MAX_ASIC_JOBS; i++)
+        {
+            GLOBAL_STATE.ASIC_TASK_MODULE.active_jobs[i] = NULL;
+            GLOBAL_STATE.valid_jobs[i] = 0;
+        }
+
         xTaskCreate(stratum_task, "stratum admin", 8192, (void *) &GLOBAL_STATE, 5, NULL);
         xTaskCreate(create_jobs_task, "stratum miner", 8192, (void *) &GLOBAL_STATE, 10, NULL);
-        xTaskCreate(ASIC_task, "asic", 8192, (void *) &GLOBAL_STATE, 10, NULL);
         xTaskCreate(ASIC_result_task, "asic result", 8192, (void *) &GLOBAL_STATE, 15, NULL);
     }
 }

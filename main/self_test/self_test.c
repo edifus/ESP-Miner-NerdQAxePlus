@@ -75,9 +75,6 @@ void self_test(void * pvParameters)
 
     GlobalState * GLOBAL_STATE = (GlobalState *) pvParameters;
 
-    GLOBAL_STATE->ASIC_TASK_MODULE.active_jobs = malloc(sizeof(bm_job *) * 128);
-    GLOBAL_STATE->valid_jobs = malloc(sizeof(uint8_t) * 128);
-
     for (int i = 0; i < 128; i++) {
 
         GLOBAL_STATE->ASIC_TASK_MODULE.active_jobs[i] = NULL;
@@ -157,7 +154,7 @@ void self_test(void * pvParameters)
 
     mining_notify notify_message;
     notify_message.job_id = 0;
-    notify_message.prev_block_hash = "0c859545a3498373a57452fac22eb7113df2a465000543520000000000000000";
+    hex2bin("0c859545a3498373a57452fac22eb7113df2a465000543520000000000000000", notify_message._prev_block_hash, 32);
     notify_message.version = 0x20000004;
     notify_message.version_mask = 0x1fffe000;
     notify_message.target = 0x1705ae3a;
@@ -192,7 +189,7 @@ void self_test(void * pvParameters)
 
     char * merkle_root = calculate_merkle_root_hash(coinbase_tx, merkles, num_merkles);
 
-    bm_job job = construct_bm_job(&notify_message, merkle_root, 0x1fffe000);
+    bm_job *job = construct_bm_job(&notify_message, merkle_root, 0x1fffe000);
 
     (*GLOBAL_STATE->ASIC_functions.set_difficulty_mask_fn)(32);
 

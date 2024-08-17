@@ -1,175 +1,83 @@
-#include "work_queue.h"
 #include "global_state.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "mining.h"
 #include <limits.h>
 #include "string.h"
+#include "system.h"
 
 #include <sys/time.h>
 
+#ifdef DEBUG_MEMORY_LOGGING
+#include "leak_tracker.h"
+#endif
+
 static const char *TAG = "create_jobs_task";
-
-#define MAX_EXTRANONCE_2 UINT_MAX
-#define TASK_YIELD_THRESHOLD 1000 // Yield after this many iterations
-#define QUEUE_LOW_WATER_MARK 10 // Adjust based on your requirements
-
-static void process_mining_job(GlobalState *GLOBAL_STATE, mining_notify *notification);
-static bool should_generate_more_work(GlobalState *GLOBAL_STATE);
-static void generate_additional_work(GlobalState *GLOBAL_STATE, mining_notify *notification);
 
 void create_jobs_task(void *pvParameters)
 {
     GlobalState *GLOBAL_STATE = (GlobalState *)pvParameters;
 
+    uint32_t extranonce_2 = 0;
+
+    ESP_LOGI(TAG, "ASIC Job Interval: %.2f ms", GLOBAL_STATE->asic_job_frequency_ms);
+    SYSTEM_notify_mining_started(GLOBAL_STATE);
+    ESP_LOGI(TAG, "ASIC Ready!");
+
+    uint32_t last_ntime = 0;
+
+    // be lazy and reduce so much typing
+    mining_notify *current_job = &GLOBAL_STATE->current_stratum_job;
+
+    uint32_t last_pool_diff = 0;
+
     while (1)
     {
-        mining_notify *mining_notification = (mining_notify *)queue_dequeue(&GLOBAL_STATE->stratum_queue);
-        if (mining_notification == NULL) {
-            ESP_LOGE(TAG, "Failed to dequeue mining notification");
-            vTaskDelay(pdMS_TO_TICKS(100)); // Wait a bit before trying again
+        vTaskDelay((GLOBAL_STATE->asic_job_frequency_ms - 0.3) / portTICK_PERIOD_MS);
+
+        pthread_mutex_lock(&GLOBAL_STATE->current_stratum_job_lock);
+
+        // do we have some job yet?
+        if (!current_job->ntime) {
+            pthread_mutex_unlock(&GLOBAL_STATE->current_stratum_job_lock);
             continue;
         }
-        ESP_LOGI(TAG, "New Work Dequeued %s", mining_notification->job_id);
-
-        // Process this job immediately
-        process_mining_job(GLOBAL_STATE, mining_notification);
-
-        // Now wait for more work or process additional jobs if needed
-        uint32_t iteration_count = 0;
-        while (GLOBAL_STATE->stratum_queue.count < 1 && GLOBAL_STATE->abandon_work == 0)
-        {
-            // Check if we need to generate more work based on the current job
-            if (should_generate_more_work(GLOBAL_STATE))
-            {
-                generate_additional_work(GLOBAL_STATE, mining_notification);
-            }
-            else
-            {
-                // If no more work needed, wait a bit before checking again
-                vTaskDelay(pdMS_TO_TICKS(100));
-            }
-
-            // Yield periodically to prevent starving other tasks
-            if (++iteration_count >= TASK_YIELD_THRESHOLD) {
-                iteration_count = 0;
-                vTaskDelay(1); // Minimal delay, just to yield
-            }
+        // check the ntime, new jobs have different ntime
+        // is faster than checking the job id
+        if (last_ntime  != current_job->ntime) {
+            last_ntime = current_job->ntime;
+            ESP_LOGI(TAG, "New Work Received %s", current_job->job_id);
         }
 
-        if (GLOBAL_STATE->abandon_work == 1)
+        char *extranonce_2_str = extranonce_2_generate(extranonce_2, GLOBAL_STATE->extranonce_2_len);
+
+        char *coinbase_tx = construct_coinbase_tx(current_job->coinbase_1, current_job->coinbase_2, GLOBAL_STATE->extranonce_str, extranonce_2_str);
+
+        char *merkle_root = calculate_merkle_root_hash(coinbase_tx, (uint8_t(*)[32])current_job->_merkle_branches, current_job->n_merkle_branches);
+        bm_job *next_job = construct_bm_job(current_job, merkle_root, GLOBAL_STATE->version_mask);
+
+        next_job->jobid = strdup(current_job->job_id);
+        next_job->extranonce2 = strdup(extranonce_2_str);
+        next_job->pool_diff = GLOBAL_STATE->stratum_difficulty;
+
+        pthread_mutex_unlock(&GLOBAL_STATE->current_stratum_job_lock);
+
+        if (next_job->pool_diff != last_pool_diff)
         {
-            GLOBAL_STATE->abandon_work = 0;
-            ASIC_jobs_queue_clear(&GLOBAL_STATE->ASIC_jobs_queue);
-            xSemaphoreGive(GLOBAL_STATE->ASIC_TASK_MODULE.semaphore);
+            ESP_LOGI(TAG, "New pool difficulty %lu", next_job->pool_diff);
+            last_pool_diff = next_job->pool_diff;
+
+            // adjust difficulty on asic
+            (*GLOBAL_STATE->ASIC_functions.set_difficulty_mask_fn)(next_job->pool_diff);
         }
 
-        STRATUM_V1_free_mining_notify(mining_notification);
-    }
-}
+        (*GLOBAL_STATE->ASIC_functions.send_work_fn)(GLOBAL_STATE, next_job); // send the job to the ASIC
 
-static void process_mining_job(GlobalState *GLOBAL_STATE, mining_notify *notification)
-{
-    char *extranonce_2_str = extranonce_2_generate(0, GLOBAL_STATE->extranonce_2_len);
-    if (extranonce_2_str == NULL) {
-        ESP_LOGE(TAG, "Failed to generate extranonce_2");
-        return;
-    }
-
-    char *coinbase_tx = construct_coinbase_tx(notification->coinbase_1, notification->coinbase_2, GLOBAL_STATE->extranonce_str, extranonce_2_str);
-    if (coinbase_tx == NULL) {
-        ESP_LOGE(TAG, "Failed to construct coinbase_tx");
-        free(extranonce_2_str);
-        return;
-    }
-
-    char *merkle_root = calculate_merkle_root_hash(coinbase_tx, (uint8_t(*)[32])notification->merkle_branches, notification->n_merkle_branches);
-    if (merkle_root == NULL) {
-        ESP_LOGE(TAG, "Failed to calculate merkle_root");
-        free(extranonce_2_str);
-        free(coinbase_tx);
-        return;
-    }
-
-    bm_job next_job = construct_bm_job(notification, merkle_root, GLOBAL_STATE->version_mask);
-
-    bm_job *queued_next_job = malloc(sizeof(bm_job));
-    if (queued_next_job == NULL) {
-        ESP_LOGE(TAG, "Failed to allocate memory for queued_next_job");
-        free(extranonce_2_str);
         free(coinbase_tx);
         free(merkle_root);
-        return;
-    }
-
-    memcpy(queued_next_job, &next_job, sizeof(bm_job));
-    queued_next_job->extranonce2 = extranonce_2_str; // Transfer ownership
-    queued_next_job->jobid = strdup(notification->job_id);
-    queued_next_job->version_mask = GLOBAL_STATE->version_mask;
-
-    queue_enqueue(&GLOBAL_STATE->ASIC_jobs_queue, queued_next_job);
-
-    free(coinbase_tx);
-    free(merkle_root);
-
-    ESP_LOGI(TAG, "Job processed and queued: %s", notification->job_id);
-}
-
-static bool should_generate_more_work(GlobalState *GLOBAL_STATE)
-{
-    return GLOBAL_STATE->ASIC_jobs_queue.count < QUEUE_LOW_WATER_MARK;
-}
-
-static void generate_additional_work(GlobalState *GLOBAL_STATE, mining_notify *notification)
-{
-    static uint32_t extranonce_2 = 1; // Start from 1 as 0 was used in the initial job
-
-    char *extranonce_2_str = extranonce_2_generate(extranonce_2, GLOBAL_STATE->extranonce_2_len);
-    if (extranonce_2_str == NULL) {
-        ESP_LOGE(TAG, "Failed to generate extranonce_2");
-        return;
-    }
-
-    char *coinbase_tx = construct_coinbase_tx(notification->coinbase_1, notification->coinbase_2, GLOBAL_STATE->extranonce_str, extranonce_2_str);
-    if (coinbase_tx == NULL) {
-        ESP_LOGE(TAG, "Failed to construct coinbase_tx");
         free(extranonce_2_str);
-        return;
+        extranonce_2++;
+
+
     }
-
-    char *merkle_root = calculate_merkle_root_hash(coinbase_tx, (uint8_t(*)[32])notification->merkle_branches, notification->n_merkle_branches);
-    if (merkle_root == NULL) {
-        ESP_LOGE(TAG, "Failed to calculate merkle_root");
-        free(extranonce_2_str);
-        free(coinbase_tx);
-        return;
-    }
-
-    bm_job next_job = construct_bm_job(notification, merkle_root, GLOBAL_STATE->version_mask);
-
-    bm_job *queued_next_job = malloc(sizeof(bm_job));
-    if (queued_next_job == NULL) {
-        ESP_LOGE(TAG, "Failed to allocate memory for queued_next_job");
-        free(extranonce_2_str);
-        free(coinbase_tx);
-        free(merkle_root);
-        return;
-    }
-
-    memcpy(queued_next_job, &next_job, sizeof(bm_job));
-    queued_next_job->extranonce2 = extranonce_2_str; // Transfer ownership
-    queued_next_job->jobid = strdup(notification->job_id);
-    queued_next_job->version_mask = GLOBAL_STATE->version_mask;
-
-    queue_enqueue(&GLOBAL_STATE->ASIC_jobs_queue, queued_next_job);
-
-    free(coinbase_tx);
-    free(merkle_root);
-
-    extranonce_2++;
-    if (extranonce_2 >= MAX_EXTRANONCE_2) {
-        extranonce_2 = 1; // Reset to 1 if we've reached the maximum
-    }
-    // Logging could cause websocket to crash use with caution
-    //ESP_LOGI(TAG, "Additional job generated and queued: %s (Extranonce2: %lu)", notification->job_id, (extranonce_2 - 1));
 }

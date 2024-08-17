@@ -7,7 +7,6 @@
 #include "lwip/dns.h"
 #include "nvs_config.h"
 #include "stratum_task.h"
-#include "work_queue.h"
 #include "esp_wifi.h"
 #include <esp_sntp.h>
 #include <time.h>
@@ -20,6 +19,7 @@
 
 #define BASE_DELAY_MS 5000
 #define MAX_RETRY_ATTEMPTS 5
+
 static const char * TAG = "stratum_task";
 static ip_addr_t ip_Addr;
 static bool bDNSFound = false;
@@ -27,13 +27,11 @@ static bool bDNSInvalid = false;
 
 static StratumApiV1Message stratum_api_v1_message = {};
 
-static SystemTaskModule SYSTEM_TASK_MODULE = {.stratum_difficulty = 8192};
-
 void dns_found_cb(const char * name, const ip_addr_t * ipaddr, void * callback_arg)
 {
     if ((ipaddr != NULL)){
         ip4_addr_t ip4addr = ipaddr->u_addr.ip4;  // Obtener la estructura ip4_addr_t
-        if (ip4_addr1(&ip4addr) != 0 && ip4_addr2(&ip4addr) != 0 && 
+        if (ip4_addr1(&ip4addr) != 0 && ip4_addr2(&ip4addr) != 0 &&
             ip4_addr3(&ip4addr) != 0 && ip4_addr4(&ip4addr) != 0) {
             ESP_LOGI(TAG, "IP found : %d.%d.%d.%d",ip4_addr1(&ip4addr),ip4_addr2(&ip4addr),ip4_addr3(&ip4addr),ip4_addr4(&ip4addr));
             ip_Addr = *ipaddr;
@@ -53,17 +51,45 @@ bool is_wifi_connected() {
     }
 }
 
+int is_socket_connected(int socket);
+
 void cleanQueue(GlobalState * GLOBAL_STATE) {
     ESP_LOGI(TAG, "Clean Jobs: clearing queue");
-    GLOBAL_STATE->abandon_work = 1;
-    queue_clear(&GLOBAL_STATE->stratum_queue);
 
     pthread_mutex_lock(&GLOBAL_STATE->valid_jobs_lock);
-    ASIC_jobs_queue_clear(&GLOBAL_STATE->ASIC_jobs_queue);
     for (int i = 0; i < 128; i = i + 4) {
         GLOBAL_STATE->valid_jobs[i] = 0;
     }
     pthread_mutex_unlock(&GLOBAL_STATE->valid_jobs_lock);
+}
+
+void free_clone_mining_notify(mining_notify *clone) {
+    if (clone->job_id) {
+        free(clone->job_id);
+        clone->job_id = 0;
+    }
+
+    if (clone->coinbase_1) {
+        free(clone->coinbase_1);
+        clone->coinbase_1 = 0;
+    }
+
+    if (clone->coinbase_2) {
+        free(clone->coinbase_2);
+        clone->coinbase_2 = 0;
+    }
+}
+
+void clone_mining_notify(mining_notify *dst, mining_notify *src) {
+    // if we have previous data free it
+    free_clone_mining_notify(dst);
+
+    // copy trivial types
+    *dst = *src;
+    // duplicate dynamic strings with unknown length
+    dst->job_id = strdup(src->job_id);
+    dst->coinbase_1 = strdup(src->coinbase_1);
+    dst->coinbase_2 = strdup(src->coinbase_2);
 }
 
 void stratum_task(void * pvParameters)
@@ -76,7 +102,6 @@ void stratum_task(void * pvParameters)
     int ip_protocol = 0;
 	int retry_attempts = 0;
     int delay_ms = BASE_DELAY_MS;
-
 
     char *stratum_url = GLOBAL_STATE->SYSTEM_MODULE.pool_url;
     uint16_t port = GLOBAL_STATE->SYSTEM_MODULE.pool_port;
@@ -136,6 +161,7 @@ void stratum_task(void * pvParameters)
                 continue;
             }
             ESP_LOGI(TAG, "Socket created, connecting to %s:%d", host_ip, port);
+
             retry_attempts = 0;
             int err = connect(GLOBAL_STATE->sock, (struct sockaddr *)&dest_addr, sizeof(struct sockaddr_in6));
             if (err != 0)
@@ -147,6 +173,22 @@ void stratum_task(void * pvParameters)
                 // instead of restarting, retry this every 5 seconds
                 vTaskDelay(5000 / portTICK_PERIOD_MS);
                 continue;
+            }
+
+            // we add timeout to prevent recv to hang forever
+            // if it times out on the recv we will check the connection state
+            // and retry if still connected
+            struct timeval timeout;
+            timeout.tv_sec = 30;  // 30 seconds timeout
+            timeout.tv_usec = 0;  // 0 microseconds
+
+            ESP_LOGI(TAG, "Set socket timeout to %d for recv and write", (int) timeout.tv_sec);
+            if (setsockopt(GLOBAL_STATE->sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+                ESP_LOGE(TAG, "Failed to set socket receive timeout");
+            }
+
+            if (setsockopt(GLOBAL_STATE->sock, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) < 0) {
+                ESP_LOGE(TAG, "Failed to set socket send timeout");
             }
 
             STRATUM_V1_reset_uid();
@@ -171,12 +213,13 @@ void stratum_task(void * pvParameters)
             free(username);
 
             while (1) {
+                if (!is_socket_connected(GLOBAL_STATE->sock)) {
+                    ESP_LOGE(TAG, "Socket is not connected ...");
+                    break;
+                }
                 char * line = STRATUM_V1_receive_jsonrpc_line(GLOBAL_STATE->sock);
                 if (!line) {
-                    ESP_LOGE(TAG, "Failed to receive JSON-RPC line, reconnecting...");
-                    shutdown(GLOBAL_STATE->sock, SHUT_RDWR);
-                    close(GLOBAL_STATE->sock);
-                    vTaskDelay(1000 / portTICK_PERIOD_MS); // Delay before attempting to reconnect
+                    ESP_LOGE(TAG, "Failed to receive JSON-RPC line, reconnecting ...");
                     break;
                 }
                 ESP_LOGI(TAG, "rx: %s", line); // debug incoming stratum messages
@@ -185,21 +228,27 @@ void stratum_task(void * pvParameters)
 
                 if (stratum_api_v1_message.method == MINING_NOTIFY) {
                     SYSTEM_notify_new_ntime(GLOBAL_STATE, stratum_api_v1_message.mining_notification->ntime);
-                    if (stratum_api_v1_message.should_abandon_work &&
-                        (GLOBAL_STATE->stratum_queue.count > 0 || GLOBAL_STATE->ASIC_jobs_queue.count > 0)) {
+
+                    // copy current job
+                    pthread_mutex_lock(&GLOBAL_STATE->current_stratum_job_lock);
+
+                    // abandon work clears the asic job list
+                    if (stratum_api_v1_message.should_abandon_work) {
                         cleanQueue(GLOBAL_STATE);
                     }
-                    if (GLOBAL_STATE->stratum_queue.count == QUEUE_SIZE) {
-                        mining_notify * next_notify_json_str = (mining_notify *) queue_dequeue(&GLOBAL_STATE->stratum_queue);
-                        STRATUM_V1_free_mining_notify(next_notify_json_str);
-                    }
 
-                    stratum_api_v1_message.mining_notification->difficulty = SYSTEM_TASK_MODULE.stratum_difficulty;
-                    queue_enqueue(&GLOBAL_STATE->stratum_queue, stratum_api_v1_message.mining_notification);
+                    clone_mining_notify(&GLOBAL_STATE->current_stratum_job, stratum_api_v1_message.mining_notification);
+                    pthread_mutex_unlock(&GLOBAL_STATE->current_stratum_job_lock);
+
+                    // free notify
+                    STRATUM_V1_free_mining_notify(stratum_api_v1_message.mining_notification);
                 } else if (stratum_api_v1_message.method == MINING_SET_DIFFICULTY) {
-                    if (stratum_api_v1_message.new_difficulty != SYSTEM_TASK_MODULE.stratum_difficulty) {
-                        SYSTEM_TASK_MODULE.stratum_difficulty = stratum_api_v1_message.new_difficulty;
-                        ESP_LOGI(TAG, "Set stratum difficulty: %ld", SYSTEM_TASK_MODULE.stratum_difficulty);
+                    if (stratum_api_v1_message.new_difficulty != GLOBAL_STATE->stratum_difficulty) {
+                        // don't change difficulty while the data is accessed
+                        pthread_mutex_lock(&GLOBAL_STATE->current_stratum_job_lock);
+                        GLOBAL_STATE->stratum_difficulty = stratum_api_v1_message.new_difficulty;
+                        pthread_mutex_unlock(&GLOBAL_STATE->current_stratum_job_lock);
+                        ESP_LOGI(TAG, "Set stratum difficulty: %ld", GLOBAL_STATE->stratum_difficulty);
                     }
                 } else if (stratum_api_v1_message.method == MINING_SET_VERSION_MASK ||
                         stratum_api_v1_message.method == STRATUM_RESULT_VERSION_MASK) {
@@ -210,10 +259,7 @@ void stratum_task(void * pvParameters)
                     GLOBAL_STATE->extranonce_str = stratum_api_v1_message.extranonce_str;
                     GLOBAL_STATE->extranonce_2_len = stratum_api_v1_message.extranonce_2_len;
                 } else if (stratum_api_v1_message.method == CLIENT_RECONNECT) {
-                    ESP_LOGE(TAG, "Pool requested client reconnect...");
-                    shutdown(GLOBAL_STATE->sock, SHUT_RDWR);
-                    close(GLOBAL_STATE->sock);
-                    vTaskDelay(1000 / portTICK_PERIOD_MS); // Delay before attempting to reconnect
+                    ESP_LOGE(TAG, "Pool requested client reconnect ...");
                     break;
                 } else if (stratum_api_v1_message.method == STRATUM_RESULT) {
                     if (stratum_api_v1_message.response_success) {
@@ -231,12 +277,11 @@ void stratum_task(void * pvParameters)
                     }
                 }
             }
-
-            if (GLOBAL_STATE->sock != -1) {
-                ESP_LOGE(TAG, "Shutting down socket and restarting...");
-                shutdown(GLOBAL_STATE->sock, 0);
-                close(GLOBAL_STATE->sock);
-            }
+            // shutdown and reconnect
+            ESP_LOGE(TAG, "Shutdown socket ...");
+            shutdown(GLOBAL_STATE->sock, SHUT_RDWR);
+            close(GLOBAL_STATE->sock);
+            vTaskDelay(1000 / portTICK_PERIOD_MS); // Delay before attempting to reconnect
         }
     }
     vTaskDelete(NULL);
