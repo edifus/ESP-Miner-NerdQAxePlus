@@ -1,7 +1,4 @@
-#include "bm1366.h"
-
 #include "crc.h"
-#include "global_state.h"
 #include "serial.h"
 #include "utils.h"
 
