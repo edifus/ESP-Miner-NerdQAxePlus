@@ -17,7 +17,7 @@
 
 // best is power of 2 for ring buffers
 #define HISTORY_LENGTH 512
-#define DIFF_STRING_SIZE 10
+#define DIFF_STRING_SIZE 12
 
 #define MAX_ASIC_JOBS 128
 

@@ -132,7 +132,6 @@ char * STRATUM_V1_receive_jsonrpc_line(int sockfd)
                     }
                     return 0;
                 }
-                return 0;
             }
 
             realloc_json_buffer(nbytes);
