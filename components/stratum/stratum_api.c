@@ -353,7 +353,7 @@ int STRATUM_V1_subscribe(int socket, char * model)
     // Subscribe
     char subscribe_msg[BUFFER_SIZE];
     const esp_app_desc_t *app_desc = esp_ota_get_app_description();
-    const char *version = app_desc->version;	
+    const char *version = app_desc->version;
     sprintf(subscribe_msg, "{\"id\": %d, \"method\": \"mining.subscribe\", \"params\": [\"bitaxe/%s/%s\"]}\n", send_uid++, model, version);
     debug_stratum_tx(subscribe_msg);
     write(socket, subscribe_msg, strlen(subscribe_msg));
@@ -411,7 +411,7 @@ void STRATUM_V1_submit_share(int socket, const char * username, const char * job
     }
 }
 
-void STRATUM_V1_configure_version_rolling(int socket, uint32_t * version_mask)
+void STRATUM_V1_configure_version_rolling(int socket)
 {
     char configure_msg[BUFFER_SIZE * 2];
     sprintf(configure_msg,

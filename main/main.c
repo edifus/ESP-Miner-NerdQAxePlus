@@ -17,7 +17,7 @@
 #include "stratum_task.h"
 #include "user_input_task.h"
 
-static GlobalState GLOBAL_STATE = {.extranonce_str = NULL, .extranonce_2_len = 0, .version_mask = 0, .stratum_difficulty = 8192};
+static GlobalState GLOBAL_STATE = {};
 
 static const char * TAG = "bitaxe";
 static const double NONCE_SPACE = 4294967296.0; //  2^32
@@ -68,7 +68,7 @@ void app_main(void)
                                         .set_difficulty_mask_fn = BM1366_set_job_difficulty_mask,
                                         .send_work_fn = BM1366_send_work};
         //GLOBAL_STATE.asic_job_frequency_ms = (NONCE_SPACE / (double) (GLOBAL_STATE.POWER_MANAGEMENT_MODULE.frequency_value * BM1366_CORE_COUNT * 1000)) / (double) GLOBAL_STATE.asic_count; // version-rolling so Small Cores have different Nonce Space
-        GLOBAL_STATE.asic_job_frequency_ms = 2000; //ms
+        GLOBAL_STATE.asic_job_frequency_ms = 1500; //ms
         GLOBAL_STATE.initial_ASIC_difficulty = BM1366_INITIAL_DIFFICULTY;
 
         GLOBAL_STATE.ASIC_functions = ASIC_functions;
@@ -81,7 +81,7 @@ void app_main(void)
                                         .set_difficulty_mask_fn = BM1368_set_job_difficulty_mask,
                                         .send_work_fn = BM1368_send_work};
         //GLOBAL_STATE.asic_job_frequency_ms = (NONCE_SPACE / (double) (GLOBAL_STATE.POWER_MANAGEMENT_MODULE.frequency_value * BM1368_CORE_COUNT * 1000)) / (double) GLOBAL_STATE.asic_count; // version-rolling so Small Cores have different Nonce Space
-        GLOBAL_STATE.asic_job_frequency_ms = 500; //ms
+        GLOBAL_STATE.asic_job_frequency_ms = 1000; //ms
         GLOBAL_STATE.initial_ASIC_difficulty = BM1368_INITIAL_DIFFICULTY;
 
         GLOBAL_STATE.ASIC_functions = ASIC_functions;
@@ -175,10 +175,7 @@ void app_main(void)
         SERIAL_set_baud((*GLOBAL_STATE.ASIC_functions.set_max_baud_fn)());
         SERIAL_clear_buffer();
 
-        pthread_mutex_init(&GLOBAL_STATE.current_stratum_job_lock, NULL);
         pthread_mutex_init(&GLOBAL_STATE.valid_jobs_lock, NULL);
-
-        memset(&GLOBAL_STATE.current_stratum_job, 0, sizeof(mining_notify));
 
         for (int i = 0; i < MAX_ASIC_JOBS; i++)
         {
