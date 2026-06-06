@@ -58,10 +58,10 @@ class StratumTaskV2 : public StratumTaskBase {
     // Helper to load authority pubkey from NVS
     bool loadAuthorityPubkey(uint8_t out[32]);
 
-    // Frame buffers
-    uint8_t m_frameBuf[SV2_MAX_FRAME_SIZE];
-    uint8_t m_recvBuf[SV2_MAX_FRAME_SIZE];
-    uint8_t m_hdrBuf[SV2_FRAME_HEADER_SIZE];
+    // Frame buffers (allocated in PSRAM)
+    uint8_t *m_frameBuf = nullptr;
+    uint8_t *m_recvBuf = nullptr;
+    uint8_t *m_hdrBuf = nullptr;
 
   public:
     StratumTaskV2(StratumManager *manager, int index);

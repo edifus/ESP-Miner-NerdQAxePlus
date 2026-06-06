@@ -37,6 +37,10 @@ StratumTaskV2::StratumTaskV2(StratumManager *manager, int index)
 {
     memset(&m_sv2_conn, 0, sizeof(m_sv2_conn));
     m_channelType = SV2_CHANNEL_EXTENDED; // default
+
+    m_frameBuf = (uint8_t *) MALLOC(SV2_MAX_FRAME_SIZE);
+    m_recvBuf  = (uint8_t *) MALLOC(SV2_MAX_FRAME_SIZE);
+    m_hdrBuf   = (uint8_t *) MALLOC(SV2_FRAME_HEADER_SIZE);
 }
 
 StratumTransport *StratumTaskV2::selectTransport()
