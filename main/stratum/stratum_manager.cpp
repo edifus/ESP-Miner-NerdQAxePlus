@@ -418,7 +418,7 @@ void StratumManager::storeExtranonce(int pool, const char *extranonce, int extra
 {
     if (pool < 0 || pool > 1) return;
     free(m_extranonce1[pool]);
-    m_extranonce1[pool] = extranonce ? strdup(extranonce) : nullptr;
+    m_extranonce1[pool] = extranonce ? STRDUP(extranonce) : nullptr;
     m_extranonce2_len[pool] = extranonce2_len;
 }
 

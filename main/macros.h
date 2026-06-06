@@ -24,10 +24,19 @@ static inline void* _realloc_psram(void* ptr, size_t sz) {
   #define MALLOC(s)      _malloc_psram((s))
   #define CALLOC(n, s)   _calloc_psram((n), (s))
   #define REALLOC(p, s)  _realloc_psram((p), (s))
+  static inline char* _strdup_psram(const char* s) {
+      if (!s) return NULL;
+      size_t len = strlen(s) + 1;
+      char* p = (char*) heap_caps_malloc(len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+      if (p) memcpy(p, s, len);
+      return p;
+  }
+  #define STRDUP(s)      _strdup_psram((s))
 #else
   #define MALLOC(s)      malloc((s))
   #define CALLOC(n, s)   calloc((n), (s))
   #define REALLOC(p, s)  realloc((p), (s))
+  #define STRDUP(s)      strdup((s))
 #endif
 
 // DMA capable

@@ -93,8 +93,8 @@ class MiningInfoV1 : public MiningInfoBase {
         // we need malloc because we will save it in the job array
         bm_job *next_job = (bm_job *) MALLOC(sizeof(bm_job));
         construct_bm_job(current_job, merkle_root, version_mask, next_job);
-        next_job->jobid = strdup(current_job->job_id);
-        next_job->extranonce2 = strdup(extranonce_2_str);
+        next_job->jobid = STRDUP(current_job->job_id);
+        next_job->extranonce2 = STRDUP(extranonce_2_str);
         next_job->pool_diff = active_stratum_difficulty;
         next_job->pool_id = pool_id;
         next_job->asic_diff = asic_diff;
@@ -163,7 +163,7 @@ class MiningInfoV1 : public MiningInfoBase {
     {
         safe_free(extranonce_str);
 
-        extranonce_str = strdup(enonce);
+        extranonce_str = STRDUP(enonce);
         extranonce_2_len = enonce2_len;
     }
 
@@ -171,7 +171,7 @@ class MiningInfoV1 : public MiningInfoBase {
     {
         safe_free(next_extranonce_str);
 
-        next_extranonce_str = strdup(enonce);
+        next_extranonce_str = STRDUP(enonce);
         next_extranonce_2_len = enonce2_len;
     }
 
@@ -180,7 +180,7 @@ class MiningInfoV1 : public MiningInfoBase {
         // do we have a pending extranonce switch?
         if (next_extranonce_str) {
             safe_free(extranonce_str);
-            extranonce_str = strdup(next_extranonce_str);
+            extranonce_str = STRDUP(next_extranonce_str);
             extranonce_2_len = next_extranonce_2_len;
             safe_free(next_extranonce_str);
             next_extranonce_2_len = 0;
@@ -193,9 +193,9 @@ class MiningInfoV1 : public MiningInfoBase {
         // copy trivial types
         memcpy(current_job, notify, sizeof(mining_notify));
         // duplicate dynamic strings with unknown length
-        current_job->job_id = strdup(notify->job_id);
-        current_job->coinbase_1 = strdup(notify->coinbase_1);
-        current_job->coinbase_2 = strdup(notify->coinbase_2);
+        current_job->job_id = STRDUP(notify->job_id);
+        current_job->coinbase_1 = STRDUP(notify->coinbase_1);
+        current_job->coinbase_2 = STRDUP(notify->coinbase_2);
 
         // set active difficulty with the mining.notify command
         active_stratum_difficulty = stratum_difficulty;

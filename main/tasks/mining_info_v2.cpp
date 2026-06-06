@@ -1,4 +1,5 @@
 #include "mining_info_v2.h"
+#include "macros.h"
 
 #include <cstring>
 #include <cstdio>
@@ -106,8 +107,8 @@ bm_job *MiningInfoV2Standard::buildBmJob(uint32_t extranonce_2, int pool_id, uin
     swap_endian_words_bin((uint8_t *)m_prev_hash, job->prev_block_hash_be, 32);
     reverse_bytes(job->prev_block_hash_be, 32);
 
-    job->jobid = strdup(m_jobid_str);
-    job->extranonce2 = strdup(""); // unused in SV2 standard channel
+    job->jobid = STRDUP(m_jobid_str);
+    job->extranonce2 = STRDUP(""); // unused in SV2 standard channel
 
     // Standard Channel: mark as sent, don't resend on timer
     m_jobSent = true;
@@ -273,12 +274,12 @@ bm_job *MiningInfoV2Extended::buildBmJob(uint32_t extranonce_2, int pool_id, uin
     swap_endian_words_bin((uint8_t *)m_prev_hash, job->prev_block_hash_be, 32);
     reverse_bytes(job->prev_block_hash_be, 32);
 
-    job->jobid = strdup(m_jobid_str);
+    job->jobid = STRDUP(m_jobid_str);
 
     // Store extranonce_2 as hex for share submission
     char en2_hex[65];
     bin2hex(en2_bin, m_extranonce_size, en2_hex, sizeof(en2_hex));
-    job->extranonce2 = strdup(en2_hex);
+    job->extranonce2 = STRDUP(en2_hex);
 
     return job;
 }

@@ -1,5 +1,6 @@
 #pragma once
 #include "stratum_config.h"
+#include "macros.h"
 #include "ArduinoJson.h"
 #include "esp_log.h"
 #include "nvs_config.h"
@@ -90,10 +91,10 @@ void StratumConfig::copyInto(StratumConfig *dst)
     safe_free(dst->m_password);
 
     dst->m_primary   = m_primary;
-    dst->m_host      = m_host ? strdup(m_host) : nullptr;
+    dst->m_host      = m_host ? STRDUP(m_host) : nullptr;
     dst->m_port      = m_port;
-    dst->m_user      = m_user ? strdup(m_user) : nullptr;
-    dst->m_password  = m_password ? strdup(m_password) : nullptr;
+    dst->m_user      = m_user ? STRDUP(m_user) : nullptr;
+    dst->m_password  = m_password ? STRDUP(m_password) : nullptr;
     dst->m_enonceSub = m_enonceSub;
     dst->m_tls       = m_tls;
     dst->m_protocol  = m_protocol;

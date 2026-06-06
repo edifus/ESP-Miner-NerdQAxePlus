@@ -6,7 +6,8 @@
 
 #include <cstddef>
 
-#include "stratum_api.h" // Assumes that types like StratumApiV1Message,
+#include "stratum_api.h"
+#include "macros.h" // Assumes that types like StratumApiV1Message,
                          // mining_notify, STRATUM_ID_SUBSCRIBE, etc., are defined here.
 #include "ArduinoJson.h"
 #include "psram_allocator.h"
@@ -201,11 +202,11 @@ bool StratumApi::parseMethods(JsonDocument &doc, const char *method_str, Stratum
 
         JsonArray params = doc["params"].as<JsonArray>();
 
-        new_work->job_id = strdup(params[0].as<const char *>());
+        new_work->job_id = STRDUP(params[0].as<const char *>());
         hex2bin(params[1].as<const char *>(), new_work->_prev_block_hash, HASH_SIZE);
 
-        new_work->coinbase_1 = strdup(params[2].as<const char *>());
-        new_work->coinbase_2 = strdup(params[3].as<const char *>());
+        new_work->coinbase_1 = STRDUP(params[2].as<const char *>());
+        new_work->coinbase_2 = STRDUP(params[3].as<const char *>());
 
         JsonArray merkle_branch = params[4].as<JsonArray>();
         new_work->n_merkle_branches = merkle_branch.size();
@@ -254,7 +255,7 @@ bool StratumApi::parseMethods(JsonDocument &doc, const char *method_str, Stratum
             ESP_LOGE(TAG, "extranonce is null");
             return false;
         }
-        message->extranonce_str = strdup(extranonce_str);
+        message->extranonce_str = STRDUP(extranonce_str);
 
         ESP_LOGI(TAG, "extranonce_str: %s", message->extranonce_str);
         ESP_LOGI(TAG, "extranonce_2_len: %d", message->extranonce_2_len);
@@ -313,7 +314,7 @@ bool StratumApi::parseSetupResponses(JsonDocument &doc, StratumApiV1Message *mes
             ESP_LOGE(TAG, "extranonce is null");
             return false;
         }
-        message->extranonce_str = strdup(extranonce_str);
+        message->extranonce_str = STRDUP(extranonce_str);
 
         ESP_LOGI(TAG, "extranonce_str: %s", message->extranonce_str);
         ESP_LOGI(TAG, "extranonce_2_len: %d", message->extranonce_2_len);
