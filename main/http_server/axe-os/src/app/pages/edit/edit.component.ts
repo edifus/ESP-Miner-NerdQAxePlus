@@ -62,7 +62,7 @@ export class EditComponent implements OnInit {
     'ssid',
     'wifiPass',
     'wifiStatus',
-    'invertfanpolarity',
+    'invertFanPolarity',
     'stratumDifficulty',
     'stratum_keep',
     'poolMode',
