@@ -69,6 +69,10 @@ export interface ISettingsV2 {
     hostname: string;
     ssid: string;
 
+    // Mempool
+    mempoolCustom: boolean;
+    mempoolUrl: string;
+
     // Display
     flipScreen: number;
     invertScreen: number;

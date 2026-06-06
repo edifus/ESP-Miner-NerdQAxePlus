@@ -157,6 +157,8 @@ export class EditComponent implements OnInit {
           flipScreen: [info.flipScreen == 1],
           invertScreen: [info.invertScreen == 1],
           autoScreenOff: [info.autoScreenOff == 1],
+          customMempoolEnabled: [!!info.mempoolCustom],
+          mempoolUrl: [info.mempoolUrl || 'https://mempool.space'],
           timeFormat: [this.localStorageService.getItem('timeFormat') || '24h'],
           stratumURL: [info.pools[0].url, [
             Validators.required,
@@ -431,6 +433,9 @@ export class EditComponent implements OnInit {
       fans,
       invertFanPolarity: !!f.invertFanPolarity,
       pidUseMax: !!f.pidUseMax,
+      // Mempool
+      mempoolCustom: !!f.customMempoolEnabled,
+      mempoolUrl: f.customMempoolEnabled ? f.mempoolUrl : '',
       // Display
       flipScreen: !!f.flipScreen,
       invertScreen: !!f.invertScreen,

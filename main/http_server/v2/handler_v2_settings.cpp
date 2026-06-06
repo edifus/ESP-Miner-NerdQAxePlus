@@ -159,6 +159,14 @@ esp_err_t GET_V2_settings(httpd_req_t *req)
         free(ssid);
     }
 
+    // --- mempool ---
+    {
+        doc["mempoolCustom"] = Config::isMempoolCustom();
+        char *mempoolUrl = Config::getMempoolUrl();
+        doc["mempoolUrl"] = mempoolUrl ? mempoolUrl : "";
+        free(mempoolUrl);
+    }
+
     // --- display ---
     doc["flipScreen"]    = board->isFlipScreenEnabled() ? 1 : 0;
     doc["invertScreen"]  = Config::isInvertScreenEnabled() ? 1 : 0;
@@ -238,6 +246,12 @@ esp_err_t PATCH_V2_settings(httpd_req_t *req)
     }
     if (doc["autoScreenOff"].is<bool>()) {
         Config::setAutoScreenOff(doc["autoScreenOff"].as<bool>());
+    }
+    if (doc["mempoolCustom"].is<bool>()) {
+        Config::setMempoolCustom(doc["mempoolCustom"].as<bool>());
+    }
+    if (doc["mempoolUrl"].is<const char*>()) {
+        Config::setMempoolUrl(doc["mempoolUrl"].as<const char*>());
     }
     if (doc["invertFanPolarity"].is<bool>()) {
         Config::setFanPolarity(doc["invertFanPolarity"].as<bool>());
