@@ -466,7 +466,7 @@
 
                     <!-- Input voltage bar -->
                     <div class="power-bar" role="img"
-                         [class.power-bar--warn]="isInputVoltageWarn(info.voltage)"
+                         [class.power-bar--warn]="isInputVoltageWarn(info.voltage, info.minVoltage, info.maxVoltage)"
                          [class.power-bar--crit]="false"
                          [class.power-bar--max]="isBarMax(info.voltage, info.maxVoltage)"
                          [attr.aria-label]="('PERFORMANCE.INPUT_VOLTAGE' | translate) + ': ' + (info.voltage | number: '1.1-1') + ' V'">
