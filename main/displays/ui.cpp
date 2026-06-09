@@ -131,25 +131,18 @@ void UI::addSplash2Overlays()
     lv_obj_align(lbCredits, LV_ALIGN_CENTER, 0, 12);
 */
     // --- Donation QR code (right side) ---
-    char *donate_addr = Config::getDonateAddr();
-    if (!donate_addr || donate_addr[0] == '\0') {
-        free(donate_addr);
-        return;
-    }
     const int maxVer = 6;
     uint8_t *tmpBuf = (uint8_t *) MALLOC(qrcodegen_BUFFER_LEN_FOR_VERSION(maxVer));
     uint8_t *qrBuf  = (uint8_t *) MALLOC(qrcodegen_BUFFER_LEN_FOR_VERSION(maxVer));
     if (!tmpBuf || !qrBuf) {
-        free(donate_addr);
         free(tmpBuf);
         free(qrBuf);
         return;
     }
 
-    bool ok = qrcodegen_encodeText(donate_addr, tmpBuf, qrBuf,
+    bool ok = qrcodegen_encodeText(CONFIG_DONATE_ADDR, tmpBuf, qrBuf,
         qrcodegen_Ecc_MEDIUM, qrcodegen_VERSION_MIN, maxVer,
         qrcodegen_Mask_AUTO, true);
-    free(donate_addr);
     free(tmpBuf);
 
     if (!ok) {

@@ -63,7 +63,7 @@
 #define NVS_CONFIG_MEMPOOL_URL "mempool_url"
 #define NVS_CONFIG_MEMPOOL_CUSTOM "mempool_cust"
 
-#define NVS_CONFIG_DONATE_ADDR "donate_addr"
+#define CONFIG_DONATE_ADDR "bc1q7n70rumyv6lvu8avpml0c3uggvssfu52egum3q"
 
 #define NVS_CONFIG_ALERT_DISCORD_WATCHDOG_ENABLE "alrt_disc_en"
 #define NVS_CONFIG_ALERT_DISCORD_URL    "alrt_disc_url"
@@ -164,8 +164,6 @@ namespace Config {
     inline void setMempoolUrl(const char* value) { cfgSetStr(NVS_CONFIG_MEMPOOL_URL, value); }
     inline bool isMempoolCustom() { return cfgGetU16(NVS_CONFIG_MEMPOOL_CUSTOM, 0) != 0; }
     inline void setMempoolCustom(bool v) { cfgSetU16(NVS_CONFIG_MEMPOOL_CUSTOM, v ? 1 : 0); }
-    inline char* getDonateAddr() { return cfgGetStrAlloc(NVS_CONFIG_DONATE_ADDR, CONFIG_DONATE_ADDR); }
-    inline void setDonateAddr(const char* value) { cfgSetStr(NVS_CONFIG_DONATE_ADDR, value); }
 
     // ---- String Setters ----
     inline void setWifiSSID(const char* value) { cfgSetStr(NVS_CONFIG_WIFI_SSID, value); }
