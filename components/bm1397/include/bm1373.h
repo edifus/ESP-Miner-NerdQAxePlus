@@ -6,6 +6,7 @@ class BM1373 : public BM1370 {
 protected:
     virtual const uint8_t* getChipId();
     virtual uint32_t getDefaultVrFrequency();
+    int nonceToAsic(uint32_t nonce) override;
 
 public:
     BM1373();

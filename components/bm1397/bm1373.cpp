@@ -24,7 +24,7 @@ static const char *TAG = "bm1373Module";
 static const uint8_t chip_id[6] = {0xaa, 0x55, 0x13, 0x72, 0x00, 0x00};
 
 static const uint64_t BM1373_CORE_COUNT = 128; // TODO
-static const uint64_t BM1373_SMALL_CORE_COUNT = 7000; // TODO
+static const uint64_t BM1373_SMALL_CORE_COUNT = 6860; // TODO
 
 #define REG_NONCE_TOTAL_CNT 0x8c
 
@@ -71,8 +71,8 @@ uint8_t BM1373::init(uint64_t frequency, uint16_t asic_count, uint32_t difficult
     // chain inactive
     sendChainInactive();
 
-    // set chip address - distribute evenly across 0-255 range
-    m_addressInterval = (chip_counter > 0) ? (256 / next_power_of_two(chip_counter)) : 4;
+    // set chip address
+    m_addressInterval = 8;
     for (uint8_t i = 0; i < chip_counter; i++) {
         setChipAddress(i * m_addressInterval);
     }
@@ -129,4 +129,10 @@ uint8_t BM1373::init(uint64_t frequency, uint16_t asic_count, uint32_t difficult
 
 uint16_t BM1373::getSmallCoreCount() {
     return BM1373_SMALL_CORE_COUNT;
+}
+
+int BM1373::nonceToAsic(uint32_t nonce) {
+    // TODO: verify shift and mask with different chip counts
+    uint32_t nonce_h = __bswap32(nonce);
+    return (nonce_h >> 24) & 0x03;
 }

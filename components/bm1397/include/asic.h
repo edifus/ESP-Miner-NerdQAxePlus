@@ -119,6 +119,7 @@ protected:
     virtual uint8_t asicToJobId(uint8_t asic_id) = 0;
     virtual uint8_t chipIndexFromAddr(uint8_t addr);
     virtual uint8_t addrFromChipIndex(uint8_t idx);
+    virtual int nonceToAsic(uint32_t nonce);
 
     // helper functions
     uint32_t vrFreqToReg(uint32_t freq_hz);
