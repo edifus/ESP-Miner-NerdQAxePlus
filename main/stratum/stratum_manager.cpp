@@ -302,6 +302,9 @@ void StratumManager::loadSettings(bool reconnect)
             m_stratumTasks[i]->triggerReconnect();
         }
 
+        // reset session stats for this pool
+        resetPoolSessionStats(i);
+
         // reset ping stats
         if (m_pingTasks[i]) {
             m_pingTasks[i]->reset();
