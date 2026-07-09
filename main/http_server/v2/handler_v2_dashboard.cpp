@@ -144,9 +144,9 @@ esp_err_t GET_V2_dashboard(httpd_req_t *req)
         JsonArray pools = stratum["pools"].as<JsonArray>();
         for (int i = 0; i < (int) pools.size() && i < 2; i++) {
             JsonObject pool = pools[i].as<JsonObject>();
-            pool["host"] = urls[i]  ? urls[i]  : "";
+            pool["host"] = urls[i];
             pool["port"] = ports[i];
-            pool["user"] = users[i] ? users[i] : "";
+            pool["user"] = users[i];
         }
 
         for (int i = 0; i < 2; i++) {
