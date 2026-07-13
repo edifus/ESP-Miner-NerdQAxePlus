@@ -93,7 +93,16 @@ esp_err_t echo_handler(httpd_req_t *req)
 
     if (req->method == HTTP_GET) {
         ESP_LOGI(TAG, "Handshake done, the new connection was opened");
-        websocket_fd = httpd_req_to_sockfd(req);
+        int new_fd = httpd_req_to_sockfd(req);
+        // Only one log websocket is tracked at a time. If a previous one is
+        // still registered (e.g. a second tab, or a reconnect while the old
+        // socket is still alive), actively close it so it can't linger as an
+        // orphaned, untracked fd — keepalive only reaps *dead* peers, not
+        // live-but-replaced ones.
+        if (http_server != NULL && websocket_fd >= 0 && websocket_fd != new_fd) {
+            httpd_sess_trigger_close(http_server, websocket_fd);
+        }
+        websocket_fd = new_fd;
         esp_log_set_vprintf(log_to_queue);
         return ESP_OK;
     }

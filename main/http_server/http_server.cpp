@@ -153,7 +153,15 @@ esp_err_t start_rest_server(void * pvParameters)
     config.lru_purge_enable = true;
     config.max_open_sockets = 10;
     config.stack_size = 12288;
-    config.keep_alive_enable = false;
+    // TCP keepalive so httpd detects half-open dead peers (laptop sleep,
+    // Wi-Fi drop, NAT timeout, tab killed) that never send FIN/CLOSE. Without
+    // it such sockets — most importantly the persistent log websocket — are
+    // never torn down, http_close_cb never fires for them, and they leak lwIP
+    // fds until the (only 16-deep) pool starves and the server stops accepting.
+    config.keep_alive_enable = true;
+    config.keep_alive_idle = 30;     // start probing after 30s idle
+    config.keep_alive_interval = 5;  // probe every 5s
+    config.keep_alive_count = 3;     // 3 unanswered probes -> dead -> close
     config.recv_wait_timeout = 5;
     config.send_wait_timeout = 5;
     config.close_fn = http_close_cb;
