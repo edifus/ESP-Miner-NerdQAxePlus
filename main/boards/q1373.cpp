@@ -1,6 +1,6 @@
 #include "q1373.h"
-#include "bm1373.h"
 #include "./drivers/TPS53667.h"
+#include "bm1373.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -34,20 +34,20 @@ Q1373B::Q1373B() : Q1370B()
     m_asicVoltages = {980, 990, 1000, 1010, 1020, 1030, 1040, 1050, 1060, 1070, 1080};
     m_defaultAsicFrequency = m_asicFrequency = 350;
     m_defaultAsicVoltageMillis = m_asicVoltageMillis = 1010;
-    m_absMaxAsicFrequency = 700;
+    m_absMaxAsicFrequency = 730;
     m_absMinAsicVoltageMillis = 900;
     m_absMaxAsicVoltageMillis = 1200;
     m_initVoltageMillis = 1050;
 
     m_pidSettings[0].targetTemp = 55;
-    m_pidSettings[0].p = 600; //   6.00
-    m_pidSettings[0].i = 10;  //   0.10
+    m_pidSettings[0].p = 600;  //   6.00
+    m_pidSettings[0].i = 10;   //   0.10
     m_pidSettings[0].d = 1000; // 10.00
 
-    m_pidSettings[1].targetTemp = 65;  // target temp for vreg
-    m_pidSettings[1].p = 600;  //   6.00
-    m_pidSettings[1].i = 10;   //   0.10
-    m_pidSettings[1].d = 1000; // 10.00
+    m_pidSettings[1].targetTemp = 65; // target temp for vreg
+    m_pidSettings[1].p = 600;         //   6.00
+    m_pidSettings[1].i = 10;          //   0.10
+    m_pidSettings[1].d = 1000;        // 10.00
 
     m_asicMaxDifficulty = 4096;
     m_asicMinDifficulty = 1024;
@@ -66,19 +66,14 @@ Q1373B::Q1373B() : Q1370B()
         delete m_tps;
         m_tps = new TPS53667();
 
-        if (m_is6Phase) {
-            m_numPhases = 6;
-            m_imax = 240; // R = 6000 / (num_phases * max_current) = 25K 0.1%
-            m_ifault = 235.0f;
-            m_maxPin = 270.0;
-            m_maxCurrentA = 22.0f;
-        } else {
-            // BOM variant: TPS53667 with only 4 phases populated,
-            // Rmon stays 25K (40A per phase)
-            m_numPhases = 4;
-            m_imax = 160;
-            m_ifault = 155.0f;
-        }
+        // formula from tps53667 datasheet (33.2k 0.1% Rmon)
+        m_imax = (int) round(0.85 / 33200.0 / 5.0e-3 * 35000.0);
+
+        m_numPhases = m_is6Phase ? 6 : 4;
+
+        m_ifault = (float) m_numPhases * 40.0f;
+        m_maxPin = (float) m_numPhases * 45.0f;
+        m_maxCurrentA = m_maxPin / 12.0f;
     } else if (m_is6Phase) {
         // 6 phases are only possible with the TPS53667
         ESP_LOGE(TAG, "6-phase strap set but no TPS53667 found; staying with 4-phase TPS53647");
@@ -129,8 +124,7 @@ void Q1373B::detectBoardOptions()
     m_isTPS53667 = (device_code == TPS53667::DEVICE_CODE);
 
     ESP_LOGI(TAG, "detection: VR device code %04x (%s), %d phases, ethernet %s", device_code,
-             m_isTPS53667 ? "TPS53667" : "TPS53647", m_is6Phase ? 6 : 4,
-             m_hasEth ? "populated" : "not populated");
+             m_isTPS53667 ? "TPS53667" : "TPS53647", m_is6Phase ? 6 : 4, m_hasEth ? "populated" : "not populated");
 }
 
 bool Q1373B::initBoard()

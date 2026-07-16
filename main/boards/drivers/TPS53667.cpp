@@ -9,7 +9,10 @@ TPS53667::TPS53667() : TPS53647()
 {
     m_i2cAddr = 0x71;
     m_hwMinVoltage = 0.25f;
-    m_initVOutMin = 1.005f;
+    // software lower bound for set_vout(); match the TPS53647 base so ASIC
+    // voltages below 1V are allowed (e.g. Q1373). Staying above 1.000V is no
+    // longer needed here — set_vout() already skips VID 0x97 for reset detection.
+    m_initVOutMin = 0.8f;
     m_initVOutMax = 1.4f;
     m_initOnOffConfig = 0b00010111;
     m_initOtWarnLimit = 95.0f;
