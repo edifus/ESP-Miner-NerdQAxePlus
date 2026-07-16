@@ -20,7 +20,9 @@ Q1373B::Q1373B() : Q1370B()
     m_asicModel = "BM1373";
     m_asicCount = 4;
     m_numPhases = 4;
-    m_imax = 123;
+    // formula from the tps53647 datasheet
+    // Rmon=48.7k, Imax=122,17A
+    m_imax = (int) round(0.85 / 48700.0 / 5.0e-3 * 35000.0);
     m_ifault = (float) 160.0f;
 
     m_maxPin = 180.0;
