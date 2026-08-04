@@ -18,7 +18,7 @@ Credits to the devs:
 
 The newest releases are always here:
 
-https://github.com/shufps/ESP-Miner-NerdQAxePlus/releases
+https://github.com/edifus/ESP-Miner-NerdQAxePlus/releases
 
 ### Recommended Method: The Webflasher
 
@@ -36,7 +36,7 @@ First you need to clone the repository and create a local copy of the config fil
 
 ```bash
 # clone repository
-git clone https://github.com/shufps/ESP-Miner-NerdQAxePlus
+git clone https://github.com/edifus/ESP-Miner-NerdQAxePlus
 
 # change into the cloned repository
 cd ESP-Miner-NerdQAxePlus

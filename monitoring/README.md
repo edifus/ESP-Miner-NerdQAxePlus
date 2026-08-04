@@ -16,7 +16,7 @@ sudo systemctl start docker && sudo systemctl enable docker
 First clone the repository and change into the monitoring directors.
 
 ```bash
-git clone https://github.com/shufps/ESP-Miner-NerdQAxePlus
+git clone https://github.com/edifus/ESP-Miner-NerdQAxePlus
 cd ESP-Miner-NerdQAxePlus/monitoring
 ```
 

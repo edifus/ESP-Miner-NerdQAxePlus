@@ -19,7 +19,7 @@
 #include "macros.h"
 #include "psram_allocator.h"
 
-#define GITHUB_REPO "https://github.com/shufps/"
+#define GITHUB_REPO "https://github.com/edifus/"
 
 #define FW_START 0x10000
 #define FW_LEN_MB 4
@@ -491,7 +491,7 @@ void FactoryOTAUpdate::task()
     }
 }
 
-// --- Helper: validate URL is a safe GitHub link to shufps repo
+// --- Helper: validate URL is a safe GitHub link to edifus repo
 static bool is_safe_github_url(const char *url)
 {
     if (!url)
@@ -637,7 +637,7 @@ bool FactoryOTAUpdate::trigger(const char *url, bool keep_config)
 
 /*
  * Handle OTA update from GitHub URL
- * Expects JSON body: {"url": "https://github.com/shufps/..."}
+ * Expects JSON body: {"url": "https://github.com/edifus/..."}
  */
 esp_err_t POST_OTA_update_from_url(httpd_req_t *req)
 {
