@@ -14,9 +14,9 @@ NerdQaxePlus2::NerdQaxePlus2() : NerdQaxePlus() {
 
     m_asicJobIntervalMs = 500;
     m_asicFrequencies = {500, 515, 525, 550, 575, 590, 600};
-    m_asicVoltages = {1120, 1130, 1140, 1150, 1160, 1170, 1180, 1190, 1200};
+    m_asicVoltages = {1120, 1130, 1140, 1150, 1160, 1170, 1180, 1190, 1200, 1210, 1220, 1230, 1240, 1250};
     m_defaultAsicFrequency = m_asicFrequency = 600;
-    m_defaultAsicVoltageMillis = m_asicVoltageMillis = 1150; // default voltage
+    m_defaultAsicVoltageMillis = m_asicVoltageMillis = 1200; // default voltage
     m_absMaxAsicFrequency = 800;
     m_absMaxAsicVoltageMillis = 1400;
     m_initVoltageMillis = 1200;
@@ -26,12 +26,12 @@ NerdQaxePlus2::NerdQaxePlus2() : NerdQaxePlus() {
     m_pidSettings[0].i = 10;   //  0.10
     m_pidSettings[0].d = 1000; // 10.00
 
-    m_maxPin = 100.0;
+    m_maxPin = 120.0;
     m_minPin = 52.0;
     m_maxVin = 13.0;
     m_minVin = 11.0;
     m_minCurrentA = 0.0f;
-    m_maxCurrentA = 8.0f;
+    m_maxCurrentA = 12.0f;
 
     m_asicMaxDifficulty = 2048;
     m_asicMinDifficulty = 512;
